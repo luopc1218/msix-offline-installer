@@ -1,0 +1,21 @@
+[package]
+name = "msix-offline-installer"
+version = "0.1.0"
+description = "Offline installer for msix and msixbundle packages"
+authors = ["luopeichun"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/luopc1218/msix-offline-installer"
+homepage = "https://github.com/luopc1218/msix-offline-installer"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-dialog = "2.6.0"
+zip = "8.2.0"
+anyhow = "1.0.102"
+roxmltree = "0.20.0"
