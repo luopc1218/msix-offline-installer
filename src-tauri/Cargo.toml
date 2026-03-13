@@ -1,6 +1,6 @@
 [package]
 name = "msix-offline-installer"
-version = "0.1.2"
+version = "0.1.3"
 description = "Offline installer for msix and msixbundle packages"
 authors = ["luopeichun"]
 edition = "2021"

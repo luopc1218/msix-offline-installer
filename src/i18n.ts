@@ -13,7 +13,7 @@ export const messages = {
       versionNotDeclared: "未声明版本",
     },
     app: {
-      title: "MSIX 离线安装器",
+      title: "MSIX Offline Installer",
       summary:
         "用于在无网络环境下安装 msix、msixbundle 与离线许可证，并实时查看安装日志与依赖信息。",
       languageLabel: "界面语言",
