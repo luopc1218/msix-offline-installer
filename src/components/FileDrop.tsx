@@ -1,13 +1,17 @@
 import { useMemo, useState, type DragEventHandler } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { formatMessage, type MessageCatalog } from "../i18n";
 
 interface FileDropProps {
   label: string;
   description: string;
   buttonLabel: string;
+  emptyTitle: string;
+  emptyDescription: string;
   accept: string[];
   multiple?: boolean;
   files: string[];
+  copy: MessageCatalog["fileDrop"];
   onFilesSelected: (paths: string[]) => void;
 }
 
@@ -20,9 +24,12 @@ function FileDrop({
   label,
   description,
   buttonLabel,
+  emptyTitle,
+  emptyDescription,
   accept,
   multiple = false,
   files,
+  copy,
   onFilesSelected,
 }: FileDropProps) {
   const [dragging, setDragging] = useState(false);
@@ -51,7 +58,7 @@ function FileDrop({
           },
         ],
         multiple,
-        title: `选择${label}`,
+        title: formatMessage(copy.dialogTitle, { label }),
       });
 
       if (!selected) {
@@ -62,7 +69,7 @@ function FileDrop({
       onFilesSelected(filterPaths(paths));
     } catch (error) {
       setLocalMessage(
-        error instanceof Error ? error.message : "打开文件选择器失败。",
+        error instanceof Error ? error.message : copy.pickerFailed,
       );
     }
   };
@@ -77,13 +84,15 @@ function FileDrop({
       .filter((value): value is string => Boolean(value));
 
     if (droppedPaths.length === 0) {
-      setLocalMessage("当前拖拽没有拿到文件路径，请改用“选择文件”按钮。");
+      setLocalMessage(copy.dropPathUnavailable);
       return;
     }
 
     const filtered = filterPaths(droppedPaths);
     if (filtered.length === 0) {
-      setLocalMessage(`拖入文件类型不匹配，仅支持 ${extensionText}`);
+      setLocalMessage(
+        formatMessage(copy.invalidType, { extensions: extensionText }),
+      );
       return;
     }
 
@@ -131,8 +140,8 @@ function FileDrop({
           </div>
         ) : (
           <div className="selected-item">
-            <span className="selected-name">尚未选择文件</span>
-            <span className="selected-path">将文件拖到这里，或点击右上角按钮</span>
+            <span className="selected-name">{emptyTitle}</span>
+            <span className="selected-path">{emptyDescription}</span>
           </div>
         )}
 

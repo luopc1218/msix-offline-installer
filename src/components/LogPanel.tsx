@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { MessageCatalog } from "../i18n";
 
 export interface LogEntry {
   id: number;
@@ -7,12 +8,13 @@ export interface LogEntry {
 }
 
 interface LogPanelProps {
+  copy: MessageCatalog;
   logs: LogEntry[];
   statusText: string;
   commandPreview: string | null;
 }
 
-function LogPanel({ logs, statusText, commandPreview }: LogPanelProps) {
+function LogPanel({ copy, logs, statusText, commandPreview }: LogPanelProps) {
   const streamRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -28,16 +30,17 @@ function LogPanel({ logs, statusText, commandPreview }: LogPanelProps) {
     <section className="panel log-panel">
       <div className="log-toolbar">
         <div>
-          <h2 className="panel-title">日志输出</h2>
-          <p className="panel-subtitle">
-            PowerShell stdout / stderr 会实时回显到这里。
-          </p>
+          <h2 className="panel-title">{copy.logPanel.title}</h2>
+          <p className="panel-subtitle">{copy.logPanel.subtitle}</p>
         </div>
         <span className="status-pill">{statusText}</span>
       </div>
 
       {commandPreview ? (
-        <div className="command-preview">{commandPreview}</div>
+        <div className="command-preview">
+          <span className="command-label">{copy.logPanel.commandLabel}</span>
+          <code>{commandPreview}</code>
+        </div>
       ) : null}
 
       <div className="log-stream" ref={streamRef}>
@@ -50,8 +53,8 @@ function LogPanel({ logs, statusText, commandPreview }: LogPanelProps) {
           ))
         ) : (
           <div className="log-empty">
-            <p>PowerShell log</p>
-            <p>点击“开始安装”后，这里会实时显示执行输出。</p>
+            <p>{copy.logPanel.emptyTitle}</p>
+            <p>{copy.logPanel.emptyDescription}</p>
           </div>
         )}
       </div>

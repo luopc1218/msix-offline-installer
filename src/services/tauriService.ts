@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { SupportedLocale } from "../i18n";
 
 export type InstallMode = "current-user" | "provisioned";
 
@@ -7,6 +8,7 @@ export interface InstallRequest {
   licensePath: string | null;
   dependencyPaths: string[];
   mode: InstallMode;
+  locale: SupportedLocale;
 }
 
 export interface InstallResult {

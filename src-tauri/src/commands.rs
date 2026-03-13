@@ -40,6 +40,8 @@ pub struct InstallRequest {
     #[serde(default)]
     dependency_paths: Vec<String>,
     mode: InstallMode,
+    #[serde(default)]
+    locale: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,8 +143,9 @@ pub fn install_msix_package(
     request: InstallRequest,
 ) -> Result<InstallResult, String> {
     validate_install_request(&request).map_err(format_error)?;
+    let locale = UiLocale::from_value(request.locale.as_deref());
     let (script, command_preview, warnings) =
-        build_install_script(&request).map_err(format_error)?;
+        build_install_script(&request, locale).map_err(format_error)?;
 
     let result = run_powershell_impl(&app, &script).map_err(format_error)?;
     Ok(InstallResult {
@@ -228,7 +231,10 @@ fn parse_manifest(package_path: &Path) -> Result<PackageMetadata> {
     })
 }
 
-fn build_install_script(request: &InstallRequest) -> Result<(String, String, Vec<String>)> {
+fn build_install_script(
+    request: &InstallRequest,
+    locale: UiLocale,
+) -> Result<(String, String, Vec<String>)> {
     let package_path = normalize_path(&request.package_path)?;
     let dependency_paths = request
         .dependency_paths
@@ -251,15 +257,22 @@ fn build_install_script(request: &InstallRequest) -> Result<(String, String, Vec
         "$ProgressPreference = 'SilentlyContinue'".to_string(),
         format!("$packagePath = {}", ps_quote(&package_path.to_string_lossy())),
         format!("$dependencyPaths = {}", ps_array(&dependency_strings)),
-        "Write-Output ('准备安装: ' + $packagePath)".to_string(),
-        "if ($dependencyPaths.Count -gt 0) { Write-Output ('依赖包数量: ' + $dependencyPaths.Count) }".to_string(),
+        format!(
+            "Write-Output ({} + $packagePath)",
+            ps_quote(locale.prepare_install_label())
+        ),
+        format!(
+            "if ($dependencyPaths.Count -gt 0) {{ Write-Output ({} + $dependencyPaths.Count) }}",
+            ps_quote(locale.dependency_count_label())
+        ),
     ];
 
     let command_preview = match request.mode {
         InstallMode::CurrentUser => {
             if let Some(license) = &license_path {
                 let warning = format!(
-                    "当前用户安装使用 Add-AppxPackage。该命令不支持 -LicensePath，已忽略许可证：{}",
+                    "{}{}",
+                    locale.current_user_license_warning_prefix(),
                     license.display()
                 );
                 warnings.push(warning.clone());
@@ -284,9 +297,12 @@ fn build_install_script(request: &InstallRequest) -> Result<(String, String, Vec
         InstallMode::Provisioned => {
             if let Some(license) = &license_path {
                 lines.push(format!("$licensePath = {}", ps_quote(&license.to_string_lossy())));
-                lines.push("Write-Output ('许可证: ' + $licensePath)".to_string());
+                lines.push(format!(
+                    "Write-Output ({} + $licensePath)",
+                    ps_quote(locale.license_label())
+                ));
             } else {
-                let warning = "未提供 license.xml，系统预安装将以 -SkipLicense 模式执行。".to_string();
+                let warning = locale.provisioned_skip_license_warning().to_string();
                 warnings.push(warning.clone());
                 lines.push(format!("Write-Warning {}", ps_quote(&warning)));
             }
@@ -307,12 +323,16 @@ fn build_install_script(request: &InstallRequest) -> Result<(String, String, Vec
         }
     };
 
-    lines.push("Write-Output '安装命令执行完毕。'".to_string());
+    lines.push(format!(
+        "Write-Output {}",
+        ps_quote(locale.install_command_finished_message())
+    ));
     Ok((lines.join("\n"), command_preview, warnings))
 }
 
 #[cfg(target_os = "windows")]
 fn run_powershell_impl(app: &AppHandle, script: &str) -> Result<PowerShellResult> {
+    let script = with_utf8_output(script);
     emit_status(
         app,
         "starting",
@@ -323,7 +343,7 @@ fn run_powershell_impl(app: &AppHandle, script: &str) -> Result<PowerShellResult
 
     let command_preview = format!(
         "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command {}",
-        ps_quote(script)
+        ps_quote(&script)
     );
 
     let mut child = Command::new("powershell.exe")
@@ -334,7 +354,7 @@ fn run_powershell_impl(app: &AppHandle, script: &str) -> Result<PowerShellResult
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            script,
+            &script,
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .stdout(Stdio::piped())
@@ -390,11 +410,15 @@ fn run_powershell_impl(_app: &AppHandle, _script: &str) -> Result<PowerShellResu
 
 #[cfg(target_os = "windows")]
 fn stream_output<R: Read>(reader: R, stream: &str, app: AppHandle) {
-    let buffered = BufReader::new(reader);
-    for line in buffered.lines() {
-        match line {
-            Ok(content) => {
-                let message = content.trim_end().to_string();
+    let mut buffered = BufReader::new(reader);
+    loop {
+        let mut line = Vec::new();
+        match buffered.read_until(b'\n', &mut line) {
+            Ok(0) => break,
+            Ok(_) => {
+                let message = decode_powershell_output(&line)
+                    .trim_end_matches(|value| value == '\r' || value == '\n')
+                    .to_string();
                 if !message.is_empty() {
                     let _ = app.emit(
                         LOG_EVENT,
@@ -417,6 +441,24 @@ fn stream_output<R: Read>(reader: R, stream: &str, app: AppHandle) {
             }
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn decode_powershell_output(bytes: &[u8]) -> String {
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn with_utf8_output(script: &str) -> String {
+    [
+        "$utf8NoBom = New-Object System.Text.UTF8Encoding $false",
+        "[Console]::InputEncoding = $utf8NoBom",
+        "[Console]::OutputEncoding = $utf8NoBom",
+        "$OutputEncoding = $utf8NoBom",
+        script,
+    ]
+    .join("\n")
 }
 
 #[cfg(target_os = "windows")]
@@ -718,4 +760,67 @@ fn ps_array(values: &[String]) -> String {
 
 fn format_error(error: anyhow::Error) -> String {
     error.to_string()
+}
+
+#[derive(Debug, Clone, Copy)]
+enum UiLocale {
+    ZhCn,
+    EnUs,
+}
+
+impl UiLocale {
+    fn from_value(value: Option<&str>) -> Self {
+        match value.unwrap_or_default().to_ascii_lowercase().as_str() {
+            "zh-cn" | "zh-hans" | "zh" => Self::ZhCn,
+            _ => Self::EnUs,
+        }
+    }
+
+    fn prepare_install_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "准备安装: ",
+            Self::EnUs => "Preparing package: ",
+        }
+    }
+
+    fn dependency_count_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "依赖包数量: ",
+            Self::EnUs => "Dependency count: ",
+        }
+    }
+
+    fn current_user_license_warning_prefix(self) -> &'static str {
+        match self {
+            Self::ZhCn => {
+                "当前用户安装使用 Add-AppxPackage。该命令不支持 -LicensePath，已忽略许可证："
+            }
+            Self::EnUs => {
+                "Current user mode uses Add-AppxPackage. -LicensePath is not supported and the license was ignored: "
+            }
+        }
+    }
+
+    fn provisioned_skip_license_warning(self) -> &'static str {
+        match self {
+            Self::ZhCn => "未提供 license.xml，系统预安装将以 -SkipLicense 模式执行。",
+            Self::EnUs => {
+                "No license.xml was provided. Provisioned installation will run with -SkipLicense."
+            }
+        }
+    }
+
+    fn license_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "许可证: ",
+            Self::EnUs => "License: ",
+        }
+    }
+
+    fn install_command_finished_message(self) -> &'static str {
+        match self {
+            Self::ZhCn => "安装命令执行完毕。",
+            Self::EnUs => "Installation command finished.",
+        }
+    }
 }
