@@ -1,7 +1,7 @@
 {
   "name": "msix-offline-installer",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Offline installer desktop app for MSIX and MSIXBundle packages",
   "license": "MIT",
   "repository": {

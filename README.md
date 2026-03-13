@@ -46,12 +46,11 @@ npm run build
 
 ## Release
 
-This repository includes a GitHub Actions workflow that builds Windows x64 installers and publishes them to GitHub Releases when a tag like `v0.1.0` is pushed.
+This repository includes a GitHub Actions workflow that builds a Windows x64 NSIS installer and publishes it to GitHub Releases when a tag like `v0.1.1` is pushed.
 
 Generated release artifacts include:
 
 - NSIS installer
-- MSI installer
 
 ## Project Structure
 
