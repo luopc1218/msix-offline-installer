@@ -707,7 +707,29 @@ fn ensure_existing_file(path: &Path, label: &str) -> Result<()> {
 fn normalize_path(value: &str) -> Result<PathBuf> {
     let path = PathBuf::from(value);
     ensure_existing_file(&path, "文件")?;
-    Ok(path.canonicalize().unwrap_or(path))
+    Ok(normalize_windows_command_path(
+        path.canonicalize().unwrap_or(path),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_command_path(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+
+    if let Some(stripped) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+
+    if let Some(stripped) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+
+    path
+}
+
+#[cfg(not(target_os = "windows"))]
+fn normalize_windows_command_path(path: PathBuf) -> PathBuf {
+    path
 }
 
 fn is_bundle(path: &Path) -> bool {

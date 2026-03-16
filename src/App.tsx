@@ -93,6 +93,7 @@ const resolveInfoMessage = (copy: MessageCatalog, infoState: InfoState) => {
 
 function App() {
   const nextLogId = useRef(1);
+  const lastStatusEventKey = useRef<string | null>(null);
   const systemLocale = useMemo(detectSystemLocale, []);
   const [languagePreference, setLanguagePreference] = useState<LanguagePreference>(
     () => readLanguagePreference(),
@@ -128,6 +129,17 @@ function App() {
 
   const handlePowerShellStatus = useEffectEvent(
     (payload: PowerShellStatusEvent, currentLocale: SupportedLocale) => {
+      const eventKey = [
+        payload.stage,
+        payload.success == null ? "" : String(payload.success),
+        payload.exitCode == null ? "" : String(payload.exitCode),
+      ].join(":");
+
+      if (lastStatusEventKey.current === eventKey) {
+        return;
+      }
+      lastStatusEventKey.current = eventKey;
+
       const currentCopy = messages[currentLocale];
       if (payload.stage === "starting") {
         setStatusState({ kind: "startingPowerShell" });
@@ -279,6 +291,7 @@ function App() {
       return;
     }
 
+    lastStatusEventKey.current = null;
     setLogs([]);
     setCommandPreview(null);
     setErrorMessage(null);
